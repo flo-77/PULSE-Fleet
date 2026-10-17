@@ -1,0 +1,21 @@
+# ROS 2 build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python generated files
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# macOS and VS Code
+.DS_Store
+.vscode/
+
+# Virtual environments and secrets
+.venv/
+venv/
+.env
+.env.*
