@@ -69,6 +69,14 @@ In progress:
 ## Project Status
 
 PULSE-Fleet is under active development. Features described in the roadmap are planned unless explicitly marked as completed.
+## State Manager Communication Architecture
+
+PULSE-Fleet is designed as a decentralized multi-robot system using ROS 2. Each robot operates its own State Manager node and exchanges state information through a shared publish/subscribe topic.
+
+![PULSE-Fleet State Manager Communication Architecture](State%20Manager%20Communication%20Architecture.png)
+
+
+*Figure 1. State Manager communication architecture showing three robot nodes connected through the shared `/fleet/robot_states` topic. Each State Manager publishes its own state and monitors peer communication using heartbeats, session identifiers, sequence numbers, and timeout detection.*
 
 ## Author
 
