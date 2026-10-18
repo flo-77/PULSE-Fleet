@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'state_manager = pulse_fleet_state_manager.state_manager:main',
         ],
     },
 )
