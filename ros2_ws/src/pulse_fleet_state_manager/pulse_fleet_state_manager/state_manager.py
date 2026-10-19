@@ -3,6 +3,7 @@ import uuid
 
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 from pulse_fleet_interfaces.msg import RobotState
 
 
@@ -17,7 +18,9 @@ class StateManager(Node):
         self.position_y = 0.0
         self.battery_percentage = 100.0
         self.operating_status = 'IDLE'
-
+        self.declare_parameter('test_status', 'IDLE')
+        self.add_on_set_parameters_callback(self.handle_parameter_change)
+        self.add_post_set_parameters_callback(self.handle_parameter_applied)
         self.current_task_id = ''
         self.sequence_number = 0
 
@@ -44,6 +47,7 @@ class StateManager(Node):
         self.peer_states = {}
         self.peer_last_seen = {}
         self.stale_peers = set()
+        self.retired_peer_sessions = {}
 
         self.declare_parameter('peer_timeout', 3.0)
         self.peer_timeout = self.get_parameter('peer_timeout').value
@@ -52,8 +56,8 @@ class StateManager(Node):
             1.0,
             self.check_peer_freshness
         )
-
-    def publish_heartbeat(self):
+ 
+    def publish_heartbeat(self, update_type=RobotState.HEARTBEAT):
         msg = RobotState()
 
         msg.robot_id = self.robot_id
@@ -68,16 +72,57 @@ class StateManager(Node):
         msg.operating_status = self.operating_status
         msg.current_task_id = self.current_task_id
 
-        msg.update_type = RobotState.HEARTBEAT
-
+        msg.update_type = update_type
         msg.header.stamp = self.get_clock().now().to_msg()
 
         self.state_publisher.publish(msg)
 
+    def publish_state_change(self):
+        self.get_logger().info(
+            f"State change triggered for {self.robot_id}"
+        )
+        update_type = RobotState.STATE_CHANGE
+        self.publish_heartbeat(update_type)
+
+    def update_operating_status(self, new_status):
+        if new_status == self.operating_status:
+            return
+
+        self.operating_status = new_status
+        self.publish_state_change()
+
+    def handle_parameter_change(self, parameters):
+        for parameter in parameters:
+            if parameter.name == 'test_status':
+                if parameter.value not in ('IDLE', 'BUSY', 'CHARGING'):
+                    return SetParametersResult(
+                        successful=False,
+                        reason='Invalid robot status'
+                    )
+
+        return SetParametersResult(successful=True)
+    
+    def handle_parameter_applied(self, parameters):
+        for parameter in parameters:
+            if parameter.name == 'test_status':
+                self.update_operating_status(parameter.value)
+
+
     def handle_peer_state(self, msg):
         if msg.robot_id == self.robot_id:
             return
-     
+        
+        retired_sessions = self.retired_peer_sessions.get(
+            msg.robot_id, set()
+        )
+
+        if msg.session_id in retired_sessions:
+            self.get_logger().warning(
+                f"Rejected retired session from {msg.robot_id}: "
+                f"{msg.session_id}"
+            )
+            return
+
         previous = self.peer_states.get(msg.robot_id)
 
         if previous is not None:
@@ -87,6 +132,11 @@ class StateManager(Node):
             else:
                 if self.is_peer_fresh(msg.robot_id):
                     return
+                
+                self.retired_peer_sessions.setdefault(
+                    msg.robot_id, set()
+                ).add(previous.session_id)
+
 
         self.peer_states[msg.robot_id] = msg
         self.peer_last_seen[msg.robot_id] = time.monotonic()
