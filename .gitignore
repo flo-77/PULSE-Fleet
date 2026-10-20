@@ -19,3 +19,5 @@ __pycache__/
 venv/
 .env
 .env.*
+
+Visualization/fleet_state.json
