@@ -1,0 +1,4 @@
+string task_id
+string robot_id
+float64 bid_cost
+builtin_interfaces/Time timestamp

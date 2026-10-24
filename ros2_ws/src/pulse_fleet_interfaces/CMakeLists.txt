@@ -12,7 +12,9 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotState.msg"
-  DEPENDENCIES std_msgs
+  "msg/TaskAnnouncement.msg"
+  "msg/TaskBid.msg"
+  DEPENDENCIES std_msgs builtin_interfaces
 )
 # uncomment the following section in order to fill in
 # further dependencies manually.

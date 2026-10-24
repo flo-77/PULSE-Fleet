@@ -41,18 +41,60 @@ Implemented capabilities:
 - Peer recovery when communication resumes.
 - Independent operation across three robot instances.
 
-### 2.2 Auction Agent — Planned
+### 2.2 Auction Agent — V1 Implemented and Tested
 
-The Auction Agent will coordinate decentralized task allocation.
+The Auction Agent enables decentralized task allocation in PULSE-Fleet using ROS 2 communication. Each robot independently receives warehouse tasks, calculates its bidding cost, exchanges bids with other robots, and determines the lowest-cost candidate without relying on a central auction server.
 
-Planned capabilities:
+**Implemented capabilities (24 October 2026):**
 
-- Shared task announcements.
-- Distributed bid calculation.
-- Deterministic winner selection.
-- Task awards and commitments.
-- Task reassignment when a robot becomes unavailable.
-- Conflict handling between competing assignments.
+- Shared warehouse task announcements through `/fleet/task_announcements`.
+- Custom ROS 2 messages: `TaskAnnouncement.msg` and `TaskBid.msg`.
+- Independent distance-based bid calculation using Euclidean distance.
+- Bid publication and reception through `/fleet/task_bids`.
+- Local bid storage organized by task ID and robot ID.
+- Configurable auction collection window (default: 2 seconds).
+- Independent minimum-cost winner selection with deterministic robot-ID tie-breaking.
+
+**Bidding algorithm**
+
+Each robot calculates the straight-line distance between its current position and the task destination:
+
+\[
+C_i = \sqrt{(x_g-x_i)^2+(y_g-y_i)^2}
+\]
+
+Where:
+
+- \(C_i\) is Robot \(i\)'s bidding cost in meters.
+- \((x_i,y_i)\) is the robot's position.
+- \((x_g,y_g)\) is the task destination.
+
+The robot with the lowest submitted cost is selected. Equal costs are resolved using robot IDs.
+
+**Verified two-robot test — `task_007`**
+
+Task destination: `(12.0, 8.0)` meters.
+
+| Robot | Starting position | Calculated bid |
+|---|---|---|
+| robot_1 | (2.0, 2.0) | 11.6619 m |
+| robot_2 | (10.0, 2.0) | 6.3246 m |
+
+Both Auction Agents independently reported:
+
+`Auction task_007 completed. Winner: robot_2, Cost: 6.32`
+
+This demonstrates successful task announcement, bid exchange, bid storage, and basic decentralized winner computation.
+
+**Current limitations and planned improvements**
+
+- Robot positions are currently supplied through ROS 2 parameters rather than live localization.
+- Straight-line distance does not account for warehouse obstacles or actual navigation path length.
+- Identical winner decisions are not guaranteed when bids are delayed or lost.
+- Task award confirmation, duplicate-task protection, conflict handling, and task reassignment remain to be implemented.
+- Integration with the Navigation Controller, Nav2, and 3D warehouse simulation is planned.
+
+The next development phase will focus on reliable task awards and commitments, followed by navigation integration and multi-robot simulation.
 
 ### 2.3 Navigation Controller — Planned
 
