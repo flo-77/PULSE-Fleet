@@ -88,13 +88,69 @@ This demonstrates successful task announcement, bid exchange, bid storage, and b
 
 **Current limitations and planned improvements**
 
-- Robot positions are currently supplied through ROS 2 parameters rather than live localization.
-- Straight-line distance does not account for warehouse obstacles or actual navigation path length.
-- Identical winner decisions are not guaranteed when bids are delayed or lost.
-- Task award confirmation, duplicate-task protection, conflict handling, and task reassignment remain to be implemented.
-- Integration with the Navigation Controller, Nav2, and 3D warehouse simulation is planned.
+- Task awards, acknowledgments, duplicate protection, and initial local conflict handling are implemented in V2; distributed consensus, durable commitments, and automatic task reassignment remain future work.
 
-The next development phase will focus on reliable task awards and commitments, followed by navigation integration and multi-robot simulation.
+### 2.2.1 Auction Agent V2 — Task Awards, Acknowledgments and Validation
+
+**Implemented and tested: 27 October 2026**
+
+Extended the decentralized Auction Agent with task award publication, winner acknowledgments, duplicate-message protection, and local award validation.
+
+**New ROS 2 interfaces**
+
+- `TaskAward.msg` — communicates the selected winner, winning cost, announcing robot, task ID, and timestamp.
+- `TaskAcknowledgment.msg` — communicates the acknowledging robot, task ID, acceptance status, and timestamp.
+
+**New communication topics**
+
+| Topic | Purpose |
+|---|---|
+| `/fleet/task_awards` | Publish auction winner decisions |
+| `/fleet/task_acknowledgments` | Publish winning robot's acceptance |
+
+**Implemented capabilities**
+
+- Task award publication after local auction evaluation.
+- Winning robot acknowledgment using `TaskAcknowledgment`.
+- Duplicate-award protection using `acknowledged_tasks`.
+- Duplicate-task-announcement protection using `seen_tasks`.
+- Local auction winner tracking using `auction_results`.
+- Conflicting-award detection and rejection when the received winner differs from the locally calculated winner.
+- Early-arriving award storage using `pending_awards`.
+- Replay and validation of queued awards after local auction evaluation.
+
+**Verified integration tests**
+
+| Test | Result |
+|---|---|
+| Task awards published by two independent Auction Agents | Passed |
+| Winning robot acknowledgment — `task_010` | Passed |
+| Duplicate acknowledgment protection — `task_011` | Passed |
+| Duplicate task announcement protection — `task_012` | Passed |
+| Normal auction with award validation — `task_013` | Passed |
+| Conflicting award rejected by Robot 1 — `task_013` | Passed |
+| Early award queued before auction completion — `task_014` | Passed |
+| Pending award replay and acknowledgment — `task_014` | Passed |
+
+**Verified auction example**
+
+For a warehouse task at `(12.0, 8.0)`:
+
+- `robot_1` at `(2.0, 2.0)` calculates a bid of approximately `11.66 m`.
+- `robot_2` at `(10.0, 2.0)` calculates a bid of approximately `6.32 m`.
+- Both agents select `robot_2`.
+- The winning robot acknowledges the task once, even when duplicate awards arrive.
+
+**Current limitations**
+
+- Local winner validation is not a distributed consensus protocol.
+- Different robots may calculate different winners if bids are delayed or lost.
+- Duplicate protection and auction results are stored in memory and do not survive agent restarts.
+- Task execution, completion feedback, timeout-based reassignment, and recovery from failed assignments are not yet implemented.
+- Award validation currently checks awards addressed to the receiving robot; it does not establish fleet-wide agreement.
+- Automated integration tests and fault-injection testing remain future work.
+
+**Next priorities:** Reliable task commitment and failure recovery, followed by Navigation Controller integration and multi-robot simulation.
 
 ### 2.3 Navigation Controller — Planned
 
@@ -297,15 +353,32 @@ It does not yet demonstrate automatic task reassignment, which is planned for th
 
 ### Phase 3 — Distributed Task Allocation
 
-**Next development phase**
+**Status: Auction Agent V1 and V2 implemented and manually tested — 27 October 2026**
 
-- Task announcement interface.
-- Auction Agent package.
-- Bid-cost calculation.
-- Distributed bid exchange.
-- Deterministic winner selection.
-- Task awards and commitments.
-- Task reassignment after robot failure.
+**Completed**
+
+- [x] Create custom `TaskAnnouncement.msg` and `TaskBid.msg` interfaces.
+- [x] Implement the Auction Agent ROS 2 package.
+- [x] Implement decentralized task announcements.
+- [x] Calculate distance-based bidding costs.
+- [x] Exchange and store bids between robots.
+- [x] Implement deterministic minimum-cost winner selection.
+- [x] Create `TaskAward.msg` and `TaskAcknowledgment.msg`.
+- [x] Publish task awards and winning robot acknowledgments.
+- [x] Prevent duplicate task announcements and acknowledgments.
+- [x] Track locally calculated auction results.
+- [x] Detect and reject locally conflicting awards.
+- [x] Queue and replay early-arriving awards.
+- [x] Manually validate the two-robot auction workflow.
+
+**Remaining**
+
+- [ ] Establish reliable fleet-wide agreement on task assignments.
+- [ ] Implement task execution status and completion feedback.
+- [ ] Implement task timeout, failure detection, and reassignment.
+- [ ] Persist task state across robot restarts.
+- [ ] Add automated integration and fault-injection tests.
+- [ ] Integrate auction decisions with autonomous navigation.
 
 ### Phase 4 — Autonomous Navigation
 
@@ -336,17 +409,24 @@ It does not yet demonstrate automatic task reassignment, which is planned for th
 - [x] Create the ROS 2 workspace.
 - [x] Implement custom robot-state messages.
 - [x] Develop the State Manager.
-- [x] Launch three communicating robot instances.
+- [x] Launch three communicating State Manager instances.
 - [x] Implement heartbeat and event-driven updates.
 - [x] Implement peer monitoring and recovery.
 - [x] Create the 2D warehouse visualization.
 - [x] Connect live ROS 2 state data to the dashboard.
 - [x] Verify robot disconnection and recovery.
-- [ ] Implement distributed task announcements.
-- [ ] Implement auction-based bidding.
-- [ ] Implement deterministic task allocation.
+- [x] Implement distributed task announcements.
+- [x] Implement auction-based bidding.
+- [x] Implement deterministic winner selection.
+- [x] Implement task awards and acknowledgments.
+- [x] Implement duplicate-announcement and duplicate-acknowledgment protection.
+- [x] Implement local conflicting-award detection.
+- [x] Implement early-award queuing and replay.
+- [x] Validate Auction Agent V2 with two robot instances.
+- [ ] Implement reliable fleet-wide task commitment.
+- [ ] Implement task completion feedback and failure recovery.
+- [ ] Implement automatic task reassignment.
 - [ ] Integrate navigation and robot movement.
-- [ ] Implement task reassignment after failures.
 - [ ] Build the 3D warehouse simulation.
 - [ ] Record the final demonstration.
 - [ ] Conduct systematic performance evaluation.
@@ -355,70 +435,111 @@ It does not yet demonstrate automatic task reassignment, which is planned for th
 
 ## 10. Testing and Validation
 
-The following behaviors have been manually tested:
+### Auction Agent V2 — Integration Tests (27 October 2026)
 
-| Test | Result |
-|---|---|
-| Three independent State Managers | Passed |
-| Shared state communication | Passed |
-| Periodic heartbeat exchange | Passed |
-| Event-driven status changes | Passed |
-| Peer timeout detection | Passed |
-| Peer recovery after restart | Passed |
-| ROS 2-to-JSON data exchange | Passed |
-| Live three-robot status updates | Passed |
-| Dashboard offline detection | Passed |
-| Dashboard recovery after reconnection | Passed |
+The following tests were performed manually using two independent ROS 2 Auction Agent instances running inside Docker.
 
-Automated tests, load testing, and performance benchmarks are planned for later development.
+| Test | Task ID | Result |
+|---|---|---|
+| Decentralized bidding and winner selection | `task_008` | Passed |
+| Task award publication by both agents | `task_009` | Passed |
+| Task acknowledgment publication | `task_010` | Passed |
+| Duplicate acknowledgment protection | `task_011` | Passed |
+| Duplicate task announcement protection | `task_012` | Passed |
+| Normal auction with local award validation | `task_013` | Passed |
+| Conflicting award rejection | `task_013` | Passed |
+| Early-arriving award queuing | `task_014` | Passed |
+| Pending award replay and acknowledgment | `task_014` | Passed |
+
+**Test configuration**
+
+- Robot 1 position: `(2.0, 2.0)` meters.
+- Robot 2 position: `(10.0, 2.0)` meters.
+- Task destination: `(12.0, 8.0)` meters.
+- Expected winner: `robot_2`.
+- Winning bid: approximately `6.3246` meters.
+
+**Observations**
+
+Both robots independently selected `robot_2` during the normal auction tests. Duplicate task announcements were ignored, and repeated awards did not produce repeated acknowledgments. A deliberately conflicting award was rejected by Robot 1. An award received before the local auction completed was queued and subsequently processed.
+
+**Validation scope**
+
+These tests demonstrate the behavior of the implemented two-robot workflow under the tested conditions. They do not establish distributed consensus, reliable task execution, automatic reassignment, or robustness under network failures.
+
+Automated regression tests, larger fleet experiments, and systematic fault-injection testing remain future work.
 
 ---
 
 ## 11. Latest Development Milestone
 
-**October 20, 2026 — Live Fleet Visualization and Fault Monitoring**
+**27 October 2026 — Auction Agent V2: Reliable Message Handling and Local Award Validation**
 
-Implemented a working warehouse dashboard connected to three ROS 2 State Managers.
+Extended PULSE-Fleet's decentralized Auction Agent with task awards, acknowledgments, duplicate-message protection, and local award consistency checks.
 
-The system successfully displays robot operating states and battery percentages, detects individual communication failures, and restores robot status when communication resumes.
+**Key achievements**
 
-Git commit:
+- Introduced `TaskAward.msg` and `TaskAcknowledgment.msg`.
+- Implemented task award publication and winner acknowledgment.
+- Prevented repeated task announcements from generating duplicate bids.
+- Prevented repeated awards from generating duplicate acknowledgments.
+- Implemented local auction-result tracking and conflicting-award rejection.
+- Implemented early-award queuing and replay after auction evaluation.
+- Successfully tested the updated workflow with two independent ROS 2 Auction Agent instances.
 
-`8489c5d` — `feat: add live warehouse fleet visualization and offline detection`
+**Validation results**
+
+The integration tests confirmed that `robot_2` was selected for the warehouse task at `(12.0, 8.0)` and acknowledged its award. Duplicate announcements and acknowledgments were suppressed, a deliberately conflicting award was rejected, and an early-arriving award was queued and subsequently processed.
+
+**Engineering status**
+
+Auction Agent V2's planned functionality has been implemented and manually tested under the two-robot test configuration.
+
+Fleet-wide consensus, persistent task commitments, automatic failure recovery, task reassignment, and autonomous navigation remain future development priorities.
 
 ---
 
 ## 12. Next Development Tasks
 
-The next milestone focuses on decentralized task allocation.
+Following the successful implementation and manual validation of Auction Agent V2 on 27 October 2026, development will focus on reliable task commitments, fault tolerance, and autonomous navigation.
 
-Initial tasks:
+**Upcoming engineering priorities**
 
-1. Define the task announcement message.
-2. Create the Auction Agent ROS 2 package.
-3. Implement shared task announcements.
-4. Design the bid-cost calculation.
-5. Implement deterministic winner selection.
-6. Validate auctions with three independent robots.
+1. **Reliable task commitment:** Establish a fleet-wide mechanism for agreeing on task assignments, beyond local auction-result validation.
+2. **Task execution lifecycle:** Introduce task states such as `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, and `FAILED`.
+3. **Failure detection and reassignment:** Detect unsuccessful task execution and redistribute tasks when robots become unavailable.
+4. **Persistent task tracking:** Preserve important assignment information across robot restarts.
+5. **Navigation integration:** Connect the Auction Agent with the Navigation Controller and ROS 2 Nav2.
+6. **Automated testing:** Introduce regression tests, conflicting-bid scenarios, communication-delay simulations, and fault-injection tests.
+7. **Multi-robot simulation:** Extend validation to three or more robots and develop a 3D warehouse environment.
 
-The objective is to allow robots to make coordinated task-allocation decisions without a centralized fleet controller.
+**Next major milestone:** Transition from decentralized task allocation to reliable autonomous task execution.
 
 ---
 
 ## 13. Project Limitations
 
-PULSE-Fleet is an active software-development project.
+PULSE-Fleet is an active robotics software engineering project. The State Manager, live warehouse visualization, and Auction Agent V1/V2 have been implemented and manually tested.
 
-The following capabilities are not yet implemented:
+**Current limitations**
 
-- Autonomous robot navigation.
-- Live physical or simulated robot movement.
-- Distributed task auctions.
-- Automatic task reassignment.
-- Multi-robot collision avoidance.
-- 3D warehouse simulation.
+- Autonomous robot navigation and physical robot movement are not yet implemented.
+- Auction bid costs use Euclidean distance rather than obstacle-aware navigation paths.
+- Robot positions are configured through ROS 2 parameters rather than live localization.
+- Local auction-result validation does not guarantee fleet-wide agreement or distributed consensus.
+- Different robots may select different winners if bids are delayed, lost, or received inconsistently.
+- Task assignment acknowledgments do not yet trigger autonomous task execution.
+- Automatic task reassignment following robot failure is not implemented.
+- Duplicate protection and auction results are maintained in memory and are lost when an agent restarts.
+- Early-award queues do not yet have expiration or cleanup mechanisms.
+- Multi-robot collision avoidance and 3D warehouse simulation are not yet implemented.
+- Automated regression testing, fault-injection testing, and performance benchmarking remain future work.
 
-The current visualization demonstrates live communication and monitoring, not autonomous navigation.
+**Current validation scope**
+
+The Auction Agent V2 has been manually tested using two independent robot instances communicating through ROS 2 topics.
+
+The current implementation demonstrates decentralized bidding, winner selection, award publication, acknowledgment, duplicate-message handling, and local award validation. It does not yet demonstrate fault-tolerant autonomous fleet operation.
 
 ---
 

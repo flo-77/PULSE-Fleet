@@ -14,6 +14,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotState.msg"
   "msg/TaskAnnouncement.msg"
   "msg/TaskBid.msg"
+  "msg/TaskAward.msg"
+  "msg/TaskAcknowledgment.msg"
   DEPENDENCIES std_msgs builtin_interfaces
 )
 # uncomment the following section in order to fill in

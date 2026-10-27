@@ -1,7 +1,8 @@
 import math
 import rclpy
 from rclpy.node import Node
-from pulse_fleet_interfaces.msg import TaskAnnouncement, TaskBid
+from pulse_fleet_interfaces.msg import (TaskAnnouncement, TaskBid, TaskAward, TaskAcknowledgment,
+)
 
 class AuctionAgent(Node):
     def __init__(self):
@@ -9,6 +10,10 @@ class AuctionAgent(Node):
         self.declare_parameter('robot_id', 'robot_1')
         self.robot_id = self.get_parameter('robot_id').value
         self.received_bids = {}
+        self.acknowledged_tasks = set()
+        self.seen_tasks = set()
+        self.auction_results = {}
+        self.pending_awards = {}
         self.declare_parameter('auction_duration', 2.0)
         self.auction_duration = self.get_parameter('auction_duration').value
         self.auction_timers = {}
@@ -29,6 +34,24 @@ class AuctionAgent(Node):
             '/fleet/task_bids',
             10
         )
+        self.award_publisher = self.create_publisher(
+            TaskAward, 
+            '/fleet/task_awards', 
+            10
+        )
+        
+        self.ack_publisher = self.create_publisher(
+            TaskAcknowledgment, 
+            '/fleet/task_acknowledgments', 
+            10
+        )
+        self.award_subscription = self.create_subscription(
+            TaskAward,
+            '/fleet/task_awards',
+            self.award_callback,
+            10
+        )
+        
         self.bid_subscription = self.create_subscription(
             TaskBid,
             '/fleet/task_bids',
@@ -37,6 +60,14 @@ class AuctionAgent(Node):
         )
 
     def task_callback(self, msg):
+        if msg.task_id in self.seen_tasks:
+            self.get_logger().info(
+                f"[{self.robot_id}] Duplicate task {msg.task_id} ignored."
+            )
+            return
+
+        self.seen_tasks.add(msg.task_id)
+        
         self.get_logger().info(
             f"[{self.robot_id}] Received task {msg.task_id} "
             f"at destination ({msg.goal_x:.1f}, {msg.goal_y:.1f})"
@@ -78,6 +109,52 @@ class AuctionAgent(Node):
             f"[{self.robot_id}] Stored bids for {msg.task_id}: "
             f"{self.received_bids[msg.task_id]}"
         )
+    
+    def award_callback(self, msg):
+        if msg.winner_id != self.robot_id:
+            return
+        if msg.task_id not in self.auction_results:
+            self.pending_awards.setdefault(msg.task_id, []).append(msg)
+
+            self.get_logger().info(
+                f"[{self.robot_id}] Award for {msg.task_id} queued. "
+                "Waiting for local auction result."
+            )
+            return
+        
+        expected_winner = self.auction_results[msg.task_id]
+
+        if msg.winner_id != expected_winner:
+            self.get_logger().warning(
+                f"[{self.robot_id}] Conflicting award for {msg.task_id}: "
+                f"received winner {msg.winner_id}, "
+                f"expected {expected_winner}. Rejecting award."
+            )
+            return
+        if msg.task_id in self.acknowledged_tasks:
+                self.get_logger().info(
+                f"[{self.robot_id}] Task {msg.task_id} already acknowledged. Ignoring duplicate award."
+                )
+                return
+
+        self.acknowledged_tasks.add(msg.task_id)
+
+        self.get_logger().info(
+        f"[{self.robot_id}] Received award for task {msg.task_id}"
+    )
+
+        acknowledgment = TaskAcknowledgment()
+        acknowledgment.task_id = msg.task_id
+        acknowledgment.robot_id = self.robot_id
+        acknowledgment.accepted = True
+        acknowledgment.timestamp = self.get_clock().now().to_msg()
+
+        self.ack_publisher.publish(acknowledgment)
+
+        self.get_logger().info(
+        f"[{self.robot_id}] Accepted task {msg.task_id}"
+    )
+        
     def evaluate_auction(self, task_id):
         # Stop the timer after its first execution
         timer = self.auction_timers.pop(task_id, None)
@@ -99,11 +176,30 @@ class AuctionAgent(Node):
             key=lambda item: (item[1], item[0])
         )
 
+        self.auction_results[task_id] = winner_id
+
+        pending_awards = self.pending_awards.pop(task_id, [])
+
+        for pending_award in pending_awards:
+            self.award_callback(pending_award)
+
+        self.get_logger().info(
+            f"[{self.robot_id}] Stored auction result for {task_id}: {winner_id}"
+        )
+        award = TaskAward()
+        award.task_id = task_id
+        award.winner_id = winner_id
+        award.winning_cost = float(winning_cost)
+        award.announcer_id = self.robot_id
+        award.timestamp = self.get_clock().now().to_msg()
+
+        self.award_publisher.publish(award)
+
         self.get_logger().info(
             f"[{self.robot_id}] Auction {task_id} completed. "
             f"Winner: {winner_id}, Cost: {winning_cost:.2f}"
         )
-        
+
 def main(args=None):
     rclpy.init(args=args)
     node = AuctionAgent()
